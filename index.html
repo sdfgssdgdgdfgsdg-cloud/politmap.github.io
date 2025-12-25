@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Карта</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+<style>
+html, body, #map { height:100%; margin:0; padding:0; }
+body { font-family:Inter, system-ui, Arial; }
+#map { position:fixed; inset:0; }
+
+.topbar {
+  position:fixed; left:50%; transform:translateX(-50%);
+  bottom:20px; height:50px;
+  display:flex; align-items:center; gap:12px;
+  padding:6px 12px; border-radius:10px;
+  background:rgba(255,255,255,0.92);
+  box-shadow:0 6px 20px rgba(0,0,0,0.08);
+  z-index:1400;
+}
+.step-btn { width:44px; height:44px; border-radius:10px; border:0; background:#fff; cursor:pointer; }
+input[type=date]{ height:38px; padding:6px 10px; border-radius:8px; border:1px solid #ccc; }
+
+.corner-btn{
+  position:fixed; bottom:20px;
+  background:rgba(255,255,255,0.95);
+  border:0;border-radius:10px;
+  padding:10px 14px;
+  box-shadow:0 4px 12px rgba(0,0,0,0.15);
+  cursor:pointer; z-index:1500;
+}
+#layersBtn{ left:20px; }
+#mapBtn{ right:20px; }
+
+.panel{
+  position:fixed; bottom:70px;
+  background:rgba(255,255,255,0.96);
+  border-radius:10px;
+  box-shadow:0 6px 18px rgba(0,0,0,0.15);
+  padding:12px;
+  display:none;
+  z-index:1600;
+}
+#layersPanel{ left:20px; width:220px; }
+#mapPanel{ right:20px; width:200px; }
+.panel h3{ margin:0 0 10px; font-size:15px; }
+.panel label{ display:block; margin:6px 0; }
+
+#drawPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#drawPanel h3 {
+  margin-bottom: 10px;
+}
+
+#drawPanel .tool-btn {
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  cursor: pointer;
+  font-size: 14px;
+  text-align: left;
+  transition: background 0.2s;
+}
+
+#drawPanel .tool-btn:hover {
+  background: #f0f0f0;
+}
+#topImageBtn{ position: fixed; top: 20px; right: 20px; z-index: 2200; cursor: pointer; pointer-events: auto; } #topImageBtn img{ width: 180px; height: 180px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); display: block; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="topbar">
+  <button class="step-btn" onclick="prevStep()">◀</button>
+
+  <input type="date" id="datePicker" />
+
+  <button class="step-btn" onclick="nextStep()">▶</button>
+
+<button class="step-btn" id="speedBtn" onclick="changeSpeed()">1×</button>
+<button class="step-btn" id="autoBtn" onclick="toggleAutoPlay()">▶</button>
+
+</div>
+
+<a href="https://t.me/kartaBD" target="_blank" id="topImageBtn">
+  <img src="img.png" alt="Ссылка" />
+</a>
+
+<button id="layersBtn" class="corner-btn">Слои</button>
+<button id="mapBtn" class="corner-btn">Карта</button>
+
+<div id="drawPanel" class="panel" 
+  style="display:block; z-index:2100; pointer-events:auto; 
+  position: 100px;; left:20px; bottom:590px; width:180px; 
+  background:rgba(255,255,255,0.96); padding:12px; 
+  border-radius:10px; box-shadow:0 6px 18px rgba(0,0,0,0.15);">
+
+
+  <h3>Инструменты</h3>
+<button class="tool-btn" onclick="startPolygon()">Полигон</button>
+<button class="tool-btn" onclick="startLine()">Линия</button>
+<button class="tool-btn" onclick="startDashedLine()">Пунктир</button>
+<button class="tool-btn" onclick="startPoint()">Точка</button>
+<button class="tool-btn" onclick="startArrow()">Стрелка</button>
+<button class="tool-btn" onclick="startArrowLine()">Ломаная стрелка</button>
+<button class="tool-btn" onclick="clearDrawn()">Очистить</button>
+</div>
+
+<div id="layersPanel" class="panel">
+  <h3>Слои</h3>
+  <label><input type="checkbox" checked onchange="toggleLayer('ru')"> РФ</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('ua')"> Украина</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('highlightRu')"> Новая территория РФ</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('highlightUa')"> Новая территория Украины</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('markers')"> Подразделения</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('forts')"> Фортификации </label>
+  <label><input type="checkbox" checked onchange="toggleLayer('drawnItems')"> Ваши многоугольники</label>
+</div>
+
+<div id="mapPanel" class="panel">
+  <h3>Подложка</h3>
+  <label><input type="radio" name="basemap" value="googleHybrid" checked> Google Hybrid</label>
+  <label><input type="radio" name="basemap" value="googleTopo"> Google</label>
+  <label><input type="radio" name="basemap" value="maptilerBasic"> MapTiler Basic</label>
+  <label><input type="radio" name="basemap" value="maptilerHybrid"> MapTiler Hybrid</label>
+  <label><input type="radio" name="basemap" value="osm"> OpenStreetMap</label>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+<script>
+const MAPTILER_KEY = "bxg5UbbzEdGOgv4O8L9r";
+const map = L.map("map",{zoomControl:true, attributionControl: false }).setView([48.8,34.8],7);
+
+
+    const attribution = L.control.attribution({ position: 'bottomright' }).addTo(map);
+attribution.setPrefix('© <a href="https://leafletjs.com/">Leaflet</a> © <a href="https://t.me/Tendesy">Tendesy</a>');
+
+// базовые карты
+const baseLayers = {
+  googleHybrid: L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { attribution:'© Google' }),
+  googleTopo: L.tileLayer('https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}', { attribution:'© Google' }),
+  maptilerBasic: L.tileLayer(`https://api.maptiler.com/maps/basic/{z}/{x}/{y}.png?key=${MAPTILER_KEY}`,{tileSize:512,zoomOffset:-1}),
+  maptilerHybrid: L.layerGroup([
+    L.tileLayer(`https://api.maptiler.com/maps/hybrid/{z}/{x}/{y}.png?key=${MAPTILER_KEY}`,{tileSize:512,zoomOffset:-1}),
+    L.tileLayer(`https://api.maptiler.com/maps/labels/{z}/{x}/{y}.png?key=${MAPTILER_KEY}`,{tileSize:512,zoomOffset:-1})
+  ]),
+  osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap', maxZoom:19})
+};
+
+let currentBase = 'googleHybrid';
+baseLayers[currentBase].addTo(map);
+
+document.querySelectorAll("input[name=basemap]").forEach(r=>{
+  r.addEventListener("change", e=>{
+    map.removeLayer(baseLayers[currentBase]);
+    currentBase = e.target.value;
+    baseLayers[currentBase].addTo(map);
+  });
+});
+
+// слои
+let layers = {
+  ru: L.layerGroup().addTo(map),
+  ua: L.layerGroup().addTo(map),
+  gray: L.layerGroup().addTo(map),
+  highlightRu: L.layerGroup().addTo(map),
+  highlightUa: L.layerGroup().addTo(map),
+  markers: L.layerGroup().addTo(map),
+  forts: L.layerGroup().addTo(map),
+  drawnItems: L.featureGroup().addTo(map)
+};
+
+function toggleLayer(key){
+  if(map.hasLayer(layers[key])) map.removeLayer(layers[key]);
+  else map.addLayer(layers[key]);
+}
+
+document.getElementById("layersBtn").onclick=()=>{ 
+  const p=document.getElementById("layersPanel"); 
+  p.style.display=p.style.display==="block"?"none":"block"; 
+};
+document.getElementById("mapBtn").onclick=()=>{ 
+  const p=document.getElementById("mapPanel"); 
+  p.style.display=p.style.display==="block"?"none":"block"; 
+};
+
+// даты
+let dates=[], currentIndex=0;
+fetch('data/dates.json')
+  .then(res=>res.json())
+  .then(data=>{
+    dates = data;
+    currentIndex = dates.length-1; // последняя дата
+    document.getElementById("datePicker").value = dates[currentIndex];
+    loadData(dates[currentIndex]);
+  });
+
+async function loadData(date){
+  const sources = ['ru','ua','highlightRu','highlightUa'];
+  for(const key of sources){
+    layers[key].clearLayers();
+    try{
+      const res = await fetch(`data/${key}/${date}.json`);
+      if(!res.ok) continue;
+      const geojson = await res.json();
+      L.geoJSON(geojson,{
+        style: f=>{ 
+          const colors = {ru:'#a52714',ua:'#0288D1',highlightRu:'#eda29b',highlightUa:'#b2ebf2'};
+          return {color:colors[key].slice(0,7),fillColor:colors[key],weight:1};
+        },
+        onEachFeature: (feature, layer)=>{ if(feature.properties && feature.properties.name) layer.bindPopup(feature.properties.name); }
+      }).addTo(layers[key]);
+    }catch(err){console.log('Нет данных для', key,date);}
+  }
+
+  // маркеры
+  layers.markers.clearLayers();
+  try{
+    const res = await fetch(`data/markers/${date}.json`);
+    const markers = await res.json();
+    markers.forEach(item=>{
+      const icon = L.icon({iconUrl:item.icon||'img/default.png',iconSize:[24,24],iconAnchor:[16,16]});
+      L.marker([item.lat,item.lng],{icon}).bindPopup(item.popup).addTo(layers.markers);
+    });
+  }catch(err){console.log('Нет маркеров для', date);}
+
+  // фортификации
+  layers.forts.clearLayers();
+  try{
+    const res = await fetch(`data/forts/${date}.json`);
+    const forts = await res.json();
+    L.geoJSON(forts,{color:'#ffaa00',weight:3}).addTo(layers.forts);
+  }catch(err){console.log('Нет фортификаций для', date);}
+}
+
+// переключение шагов
+function prevStep(){ if(currentIndex>0){ currentIndex--; document.getElementById("datePicker").value=dates[currentIndex]; loadData(dates[currentIndex]); } }
+function nextStep(){ if(currentIndex<dates.length-1){ currentIndex++; document.getElementById("datePicker").value=dates[currentIndex]; loadData(dates[currentIndex]); } }
+document.getElementById("datePicker").addEventListener("change",(e)=>{ const val=e.target.value; const idx=dates.indexOf(val); if(idx!==-1){ currentIndex=idx; loadData(val); } });
+
+// общий синий цвет
+const DRAW_COLOR = "#ffffff";
+
+// --------- Обнови startPolygon и startLine: цвет в DRAW_COLOR ----------
+function startPolygon(){
+  const drawer = new L.Draw.Polygon(map,{
+    allowIntersection:false,
+    showArea:true,
+    shapeOptions:{color: DRAW_COLOR}
+  });
+  drawer.enable();
+
+  const onCreate = function(e){
+    const layer = e.layer;
+    const latlngs = layer.getLatLngs()[0];
+    if(latlngs.length > 2 && !latlngs[0].equals(latlngs[latlngs.length-1])){
+      latlngs.push(latlngs[0]);
+      layer.setLatLngs([latlngs]);
+    }
+    layers.drawnItems.addLayer(layer);
+    const poly = latlngs.map(p => [p.lng, p.lat]);
+    const area = turf.area(turf.polygon([poly]));
+    layer.bindPopup(`Площадь: ${(area/1000000).toFixed(2)} км²`).openPopup();
+    map.off('draw:created', onCreate);
+  };
+
+  map.once('draw:created', onCreate);
+}
+
+function startLine(){
+  const drawer = new L.Draw.Polyline(map,{
+    shapeOptions:{color: DRAW_COLOR}
+  });
+  drawer.enable();
+
+  const onCreate = function(e){
+    const layer = e.layer;
+    layers.drawnItems.addLayer(layer);
+    const line = layer.getLatLngs().map(p => [p.lng, p.lat]);
+    const len = turf.length(turf.lineString(line), {units:'kilometers'});
+    layer.bindPopup(`Длина: ${len.toFixed(2)} км`).openPopup();
+    map.off('draw:created', onCreate);
+  };
+
+  map.once('draw:created', onCreate);
+}
+
+
+// --------- ТОЧКА (круглый маркер) ----------
+function startPoint() {
+  map.once("click", e => {
+    const marker = L.circleMarker(e.latlng, {
+      radius: 6,
+      color: DRAW_COLOR,
+      fillColor: "#fff",
+      fillOpacity: 1,
+      weight: 2
+    }).addTo(layers.drawnItems);
+    marker.bindPopup(`Точка`).openPopup();
+  });
+}
+
+
+// --------- ПУНКТИРНАЯ ЛИНИЯ ----------
+function startDashedLine() {
+  const drawer = new L.Draw.Polyline(map, {
+    shapeOptions: { color: DRAW_COLOR, dashArray: "8,6", weight: 3 }
+  });
+  drawer.enable();
+
+  map.once("draw:created", e => {
+    layers.drawnItems.addLayer(e.layer);
+  });
+}
+
+
+// --------- ВСПОМОГАТЕЛЬ: СОЗДАТЬ ГОЛОВКУ СТРЕЛКИ (на основе пикселей) ----------
+function createArrowHead(latlngFrom, latlngTo, sizePx = 14) {
+  // переводим в координаты пикселей
+  const pFrom = map.latLngToLayerPoint(latlngFrom);
+  const pTo = map.latLngToLayerPoint(latlngTo);
+
+  // вектор направления
+  const vx = pTo.x - pFrom.x;
+  const vy = pTo.y - pFrom.y;
+  const vlen = Math.sqrt(vx*vx + vy*vy) || 1;
+
+  // нормализованный вектор направления (в пикселях)
+  const ux = vx / vlen;
+  const uy = vy / vlen;
+
+  // перпендикуляр
+  const px = -uy;
+  const py = ux;
+
+  // вершины стрелки в пикселях: кончик в pTo, два основания по бокам
+  const tip = pTo;
+  const baseCenter = L.point(pTo.x - ux * sizePx, pTo.y - uy * sizePx);
+  const left = L.point(baseCenter.x + px * (sizePx * 0.6), baseCenter.y + py * (sizePx * 0.6));
+  const right = L.point(baseCenter.x - px * (sizePx * 0.6), baseCenter.y - py * (sizePx * 0.6));
+
+  // конвертируем пиксели обратно в latlng
+  const latlngTip = map.layerPointToLatLng(tip);
+  const latlngLeft = map.layerPointToLatLng(left);
+  const latlngRight = map.layerPointToLatLng(right);
+
+  return L.polygon([latlngTip, latlngLeft, latlngRight], {
+    color: DRAW_COLOR,
+    fillColor: DRAW_COLOR,
+    weight: 1,
+    fillOpacity: 1
+  });
+}
+
+
+// --------- ПРОСТАЯ СТРЕЛКА: 2 клика (откуда -> куда) ----------
+function startArrow() {
+  map.once("click", function onFirst(e1) {
+    const p1 = e1.latlng;
+    // визуальная подсказка: временная точка
+    const hint = L.circleMarker(p1, { radius:4, color: DRAW_COLOR }).addTo(layers.drawnItems);
+
+    map.once("click", function onSecond(e2) {
+      const p2 = e2.latlng;
+
+      // линия
+      const line = L.polyline([p1, p2], { color: DRAW_COLOR, weight: 3 }).addTo(layers.drawnItems);
+
+      // головка стрелки
+      const head = createArrowHead(p1, p2, 14).addTo(layers.drawnItems);
+
+      // опционально удалить подсказку
+      layers.drawnItems.removeLayer(hint);
+    });
+  });
+}
+
+
+// --------- ЛИНИЯ СО СТРЕЛКОЙ: нарисуй линию (через draw), в конце добавится головка ----------
+function startArrowLine() {
+  const drawer = new L.Draw.Polyline(map, {
+    shapeOptions: { color: DRAW_COLOR, weight: 3 }
+  });
+  drawer.enable();
+
+  map.once("draw:created", e => {
+    const layer = e.layer;
+    const latlngs = layer.getLatLngs();
+
+    layers.drawnItems.addLayer(layer);
+
+    // если линия содержит хотя бы 2 точки - добавим стрелку на конец
+    if (latlngs && latlngs.length >= 2) {
+      const last = latlngs[latlngs.length - 1];
+      const prev = latlngs[latlngs.length - 2];
+      const head = createArrowHead(prev, last, 14).addTo(layers.drawnItems);
+    }
+  });
+}
+
+
+function clearDrawn(){
+  layers.drawnItems.clearLayers();
+}
+
+let autoPlay = false;
+let speed = 1;      // 1x, 3x, 5x
+let timer = null;
+
+function changeSpeed() {
+  if (speed === 1) speed = 3;
+  else if (speed === 3) speed = 5;
+  else speed = 1;
+
+  document.getElementById("speedBtn").innerText = speed + "×";
+
+  // если autoplay включён — перезапускаем интервал
+  if (autoPlay) startAutoPlay();
+}
+
+function toggleAutoPlay() {
+  autoPlay = !autoPlay;
+
+  const btn = document.getElementById("autoBtn");
+
+  if (autoPlay) {
+    btn.innerText = "■"; // стоп
+    startAutoPlay();
+  } else {
+    btn.innerText = "▶"; // воспроизведение
+    stopAutoPlay();
+  }
+}
+
+function startAutoPlay() {
+  stopAutoPlay(); 
+
+  let delay = 1000; // 1x = 1000ms
+
+  if (speed === 3) delay = 333;
+  if (speed === 5) delay = 200;
+
+  timer = setInterval(() => {
+    if (currentIndex < dates.length - 1) {
+      nextStep();
+    } else {
+      toggleAutoPlay(); // стоп
+    }
+  }, delay);
+}
+
+function stopAutoPlay() {
+  if (timer) {
+    clearInterval(timer);
+    timer = null;
+  }
+}
+
+
+
+
+</script>
+</body>
+</html>
